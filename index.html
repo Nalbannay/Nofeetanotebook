@@ -167,6 +167,9 @@ canvas.paper{width:min(340px,80vw);height:auto;background:#fff;border-radius:3px
           <button data-v="lines">مسطّر</button><button data-v="dots">منقّط</button><button data-v="grid">مربعات</button><button data-v="blank">فاضي</button>
           <button data-v="weekly">أسبوعي</button><button data-v="daily">يومي</button><button data-v="todo">مهام</button><button data-v="reading">قراءة</button>
         </div></div>
+      <div class="f"><label for="i-img">تصميم من عندج للصفحة (صورة PNG أو JPG)</label><input type="file" id="i-img" accept="image/*">
+        <span class="note">ينحط خلفية للصفحة كاملة. اختاري «فاضي» إذا تبين تصميمج بروحه، أو أي نوع ثاني عشان تنرسم السطور فوقه.</span>
+        <button class="btn small danger" id="i-irm" style="align-self:flex-start">إزالة تصميمي</button></div>
       <div class="row">
         <div class="f"><label for="i-sp">المسافة بين السطور (ملم)</label><input type="number" id="i-sp" min="4" max="14" step="0.5"></div>
         <div class="f"><label for="i-color">لون الخطوط</label><input type="color" id="i-color"></div>
@@ -215,9 +218,9 @@ function defaults(){return {
   name:"دفتر القراءة", size:"A5", bind:"right", bleed:false,
   cover:{title:"دفتر\nالقراءة", sub:"كتبي · اقتباساتي · ملاحظاتي", foot:"", font:"Reem Kufi", tcolor:"#23403b", tsize:24, ty:42, tx:50,
          bg:"#dfe9e1", pcolor:"#b9cfc2", pattern:"arches", frame:"label", img:null, iop:1},
-  inner:{tpl:"reading", sp:8, color:"#8a9a97", w:"0.25", head:"", date:false, num:true, pages:60, duplex:true}
+  inner:{tpl:"reading", sp:8, color:"#8a9a97", w:"0.25", head:"", date:false, num:true, pages:60, duplex:true, img:null}
 };}
-var S=defaults(), docId=null, coverImg=null, coverBlob=null;
+var S=defaults(), docId=null, coverImg=null, coverBlob=null, innerImg=null, innerBlob=null;
 var cap={db:null,user:null,dl:null,assets:null,uid:null};
 var $=function(id){return document.getElementById(id)};
 function status(t,err){var e=$("status");e.textContent=t;e.className="status"+(err?" err":"")}
@@ -276,6 +279,7 @@ function drawInner(c,W,H,flip,pageNo){
   var I=S.inner, m=9, gut=11, bind=S.bind;
   if(flip){bind=bind==="right"?"left":bind==="left"?"right":bind}
   c.fillStyle="#ffffff";c.fillRect(0,0,W,H);
+  if(innerImg){var iw=innerImg.naturalWidth,ih=innerImg.naturalHeight,sc=Math.max(W/iw,H/ih);c.drawImage(innerImg,(W-iw*sc)/2,(H-ih*sc)/2,iw*sc,ih*sc)}
   var x1=m+(bind==="left"?gut:0), x2=W-m-(bind==="right"?gut:0), y1=m+(bind==="top"?gut:0), y2=H-m;
   var F="'IBM Plex Sans Arabic','Tajawal',sans-serif", fs=Math.max(2.9,Math.min(4,W/42));
   c.strokeStyle=I.color;c.fillStyle=I.color;c.lineWidth=parseFloat(I.w);c.direction="rtl";c.textBaseline="alphabetic";
@@ -381,6 +385,18 @@ $("c-img").addEventListener("change",function(e){
 });
 $("c-irm").addEventListener("click",function(){coverImg=null;coverBlob=null;S.cover.img=null;$("c-img").value="";refresh();status("تمت إزالة الصورة.")});
 
+$("i-img").addEventListener("change",function(e){
+  var f=e.target.files&&e.target.files[0];if(!f)return;
+  loadImgFromBlob(f).then(function(im){
+    var max=3600,sc=Math.min(1,max/Math.max(im.naturalWidth,im.naturalHeight)),cv=document.createElement("canvas");
+    cv.width=Math.round(im.naturalWidth*sc);cv.height=Math.round(im.naturalHeight*sc);var x=cv.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,cv.width,cv.height);x.drawImage(im,0,0,cv.width,cv.height);
+    cv.toBlob(function(bl){innerBlob=bl;S.inner.img=null;loadImgFromBlob(bl).then(function(i2){innerImg=i2;refresh();
+      var d=dims(),need=Math.round(d[0]*PX),small=im.naturalWidth<need*0.7,ratio=Math.abs(im.naturalWidth/im.naturalHeight-d[0]/d[1])>0.04;
+      status(small?"انتبهي: التصميم صغير ("+im.naturalWidth+" بكسل عرض) وممكن يطلع مو واضح بالطباعة. الأفضل "+need+" بكسل أو أكثر.":(ratio?"تمت إضافة تصميمج. مقاسه غير مقاس الدفتر، فراح ينقص من أطرافه شوي.":"تمت إضافة تصميمج للصفحة."),small)})},"image/jpeg",0.95);
+  }).catch(function(){status("ما قدرت أفتح هالصورة. جربي صورة JPG أو PNG.",true)});
+});
+$("i-irm").addEventListener("click",function(){innerImg=null;innerBlob=null;S.inner.img=null;$("i-img").value="";refresh();status("تمت إزالة تصميم الصفحة.")});
+
 /* ---------- custom fonts ---------- */
 $("c-fontfile").addEventListener("change",function(e){
   var files=Array.prototype.slice.call(e.target.files||[]);if(!files.length)return;
@@ -430,8 +446,8 @@ $("ex-inner-pdf").addEventListener("click",function(){busy(true);
     for(var p=1;p<=n;p++){
       if(p>1)doc.addPage([d[0],d[1]],d[0]>d[1]?"landscape":"portrait");
       var flip=mirror&&p%2===0,key=S.inner.num?"p"+p:(flip?"B":"A");
-      if(!cache[key])cache[key]=render(document.createElement("canvas"),"inner",PX,{flip:flip,page:S.inner.num?p:0}).toDataURL("image/png");
-      doc.addImage(cache[key],"PNG",0,0,d[0],d[1],key,"FAST");
+      if(!cache[key])cache[key]=render(document.createElement("canvas"),"inner",PX,{flip:flip,page:S.inner.num?p:0}).toDataURL(innerImg?"image/jpeg":"image/png",0.93);
+      doc.addImage(cache[key],innerImg?"JPEG":"PNG",0,0,d[0],d[1],key,"FAST");
       if(S.inner.num)delete cache[key];
     }
     return doc.output("blob")})})
@@ -447,18 +463,19 @@ function thumb(){var s=$("pv-cover"),t=document.createElement("canvas");t.width=
 function save(asNew){
   if(asNew||!docId)docId="nb-"+Date.now().toString(36);
   status("جاري الحفظ…");
-  var up=Promise.resolve();
-  if(coverBlob&&!S.cover.img&&coll()){
-    if(cap.assets)up=cap.assets.upload(coverBlob).then(function(a){S.cover.img=a.id}).catch(function(){S.cover.img=null;return "noimg"});
-    else up=Promise.resolve("noimg");
+  function upOne(blob,g){
+    if(!blob||S[g].img||!coll())return Promise.resolve();
+    if(!cap.assets)return Promise.resolve("noimg");
+    return cap.assets.upload(blob).then(function(a){S[g].img=a.id}).catch(function(){S[g].img=null;return "noimg"});
   }
+  var up=Promise.all([upOne(coverBlob,"cover"),upOne(innerBlob,"inner")]).then(function(r){return r.indexOf("noimg")>=0?"noimg":null});
   return up.then(function(flag){
     var rec={kind:"notebook",name:S.name||"بدون اسم",updated:Date.now(),thumb:thumb(),state:JSON.parse(JSON.stringify(S))};
     var c=coll(),done;
     if(c)done=c.doc(docId).set(rec);
-    else{rec.id=docId;if(coverBlob)rec.blob=coverBlob;done=idbOp("readwrite",function(st){return st.put(rec)})}
+    else{rec.id=docId;if(coverBlob)rec.blob=coverBlob;if(innerBlob)rec.iblob=innerBlob;done=idbOp("readwrite",function(st){return st.put(rec)})}
     return done.then(function(){
-      status(flag==="noimg"?"تم حفظ التصميم، بس صورة الغلاف ما انحفظت معاه. ارفعيها مرة ثانية لما تفتحينه.":(c?"تم حفظ التصميم بحسابج.":"تم حفظ التصميم على هالمتصفح."),flag==="noimg");
+      status(flag==="noimg"?"تم حفظ التصميم، بس الصور اللي رفعتيها ما انحفظت معاه. ارفعيها مرة ثانية لما تفتحينه.":(c?"تم حفظ التصميم بحسابج.":"تم حفظ التصميم على هالمتصفح."),flag==="noimg");
       return list();
     });
   }).catch(function(e){status("ما تم الحفظ"+(e&&e.code==="quota_exceeded"?": المساحة ممتلئة، امسحي تصاميم قديمة.":". جربي مرة ثانية."),true)});
@@ -490,19 +507,24 @@ function merge(base,st){var o=base;if(!st||typeof st!=="object")return o;
   ["cover","inner"].forEach(function(g){if(st[g]&&typeof st[g]==="object")Object.keys(o[g]).forEach(function(k){if(k in st[g])o[g][k]=st[g][k]})});
   if(!SIZES[o.size])o.size="A5";return o}
 function openDesign(id,rec){
-  S=merge(defaults(),rec.state);docId=id;wantFont=S.cover.font;coverImg=null;coverBlob=null;$("c-img").value="";fill();
+  S=merge(defaults(),rec.state);docId=id;wantFont=S.cover.font;coverImg=null;coverBlob=null;innerImg=null;innerBlob=null;$("c-img").value="";$("i-img").value="";fill();
   var p=Promise.resolve();
   if(S.cover.img&&/^[A-Za-z0-9_.~:@+-]+$/.test(String(S.cover.img))){
     p=fetch("/_blob/"+S.cover.img).then(function(r){if(!r.ok)throw 0;return r.blob()}).then(loadImgFromBlob).then(function(im){coverImg=im}).catch(function(){S.cover.img=null;status("فتحت التصميم، بس صورة الغلاف ما انحملت. ارفعيها مرة ثانية.",true)});
   } else if(rec.blob instanceof Blob){S.cover.img=null;coverBlob=rec.blob;p=loadImgFromBlob(rec.blob).then(function(im){coverImg=im}).catch(function(){coverBlob=null})}
   else S.cover.img=null;
-  p.then(fontsReady).then(function(){refresh();if(!$("status").classList.contains("err"))status("تم فتح: "+(rec.name||""))});
+  var p2=Promise.resolve();
+  if(S.inner.img&&/^[A-Za-z0-9_.~:@+-]+$/.test(String(S.inner.img))){
+    p2=fetch("/_blob/"+S.inner.img).then(function(r){if(!r.ok)throw 0;return r.blob()}).then(loadImgFromBlob).then(function(im){innerImg=im}).catch(function(){S.inner.img=null;status("فتحت التصميم، بس تصميم الصفحة ما انحمل. ارفعيه مرة ثانية.",true)});
+  } else if(rec.iblob instanceof Blob){S.inner.img=null;innerBlob=rec.iblob;p2=loadImgFromBlob(rec.iblob).then(function(im){innerImg=im}).catch(function(){innerBlob=null})}
+  else S.inner.img=null;
+  Promise.all([p,p2]).then(fontsReady).then(function(){refresh();if(!$("status").classList.contains("err"))status("تم فتح: "+(rec.name||""))});
 }
 $("save").addEventListener("click",function(){save(false)});
 $("save-top").addEventListener("click",function(){save(false)});
 $("save-new").addEventListener("click",function(){save(true)});
 $("new").addEventListener("click",function(){S=defaults();S.name="دفتر جديد";S.cover.title="عنوان\nالدفتر";S.cover.sub="";S.cover.pattern="none";S.cover.frame="line";S.cover.bg="#f1efe9";S.inner.tpl="lines";
-  docId=null;coverImg=null;coverBlob=null;$("c-img").value="";fill();refresh();status("تصميم جديد. ابدي من تبويب الغلاف.")});
+  docId=null;coverImg=null;coverBlob=null;innerImg=null;innerBlob=null;$("c-img").value="";$("i-img").value="";fill();refresh();status("تصميم جديد. ابدي من تبويب الغلاف.")});
 
 /* ---------- start ---------- */
 fill();refresh();fontsReady().then(refresh);
