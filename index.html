@@ -138,6 +138,7 @@ canvas.paper{width:min(340px,80vw);height:auto;background:#fff;border-radius:3px
         <span class="note" id="font-note">الخطوط اللي تحملينها تنحفظ على هالمتصفح وتطلع بقائمة الخط.</span></div>
       <div class="f"><label for="c-tsize">حجم العنوان</label><input type="range" id="c-tsize" min="6" max="40" step="0.5"></div>
       <div class="f"><label for="c-ty">مكان العنوان (فوق ↔ تحت)</label><input type="range" id="c-ty" min="10" max="90" step="1"></div>
+      <div class="f"><label for="c-tx">مكان العنوان (يمين ↔ يسار)</label><input type="range" id="c-tx" min="10" max="90" step="1"></div>
       <hr>
       <div class="row">
         <div class="f"><label for="c-bg">لون الخلفية</label><input type="color" id="c-bg"></div>
@@ -212,7 +213,7 @@ var SIZES={A5:[148,210],A4:[210,297],B5:[176,250],A6:[105,148],SQ:[150,150]};
 var DPI=300, PX=DPI/25.4, BLEED=3;
 function defaults(){return {
   name:"دفتر القراءة", size:"A5", bind:"right", bleed:false,
-  cover:{title:"دفتر\nالقراءة", sub:"كتبي · اقتباساتي · ملاحظاتي", foot:"", font:"Reem Kufi", tcolor:"#23403b", tsize:24, ty:42,
+  cover:{title:"دفتر\nالقراءة", sub:"كتبي · اقتباساتي · ملاحظاتي", foot:"", font:"Reem Kufi", tcolor:"#23403b", tsize:24, ty:42, tx:50,
          bg:"#dfe9e1", pcolor:"#b9cfc2", pattern:"arches", frame:"label", img:null, iop:1},
   inner:{tpl:"reading", sp:8, color:"#8a9a97", w:"0.25", head:"", date:false, num:true, pages:60, duplex:true}
 };}
@@ -244,7 +245,7 @@ function drawCover(c,W,H,b){
     c.save();c.globalAlpha=C.iop;c.drawImage(coverImg,-b+(tw-dw)/2,-b+(th-dh)/2,dw,dh);c.restore();
   } else if(C.pattern!=="none"){ pattern(c,C.pattern,C.pcolor,W,H,b); }
   var lines=String(C.title||"").split("\n").filter(function(l){return l.trim().length}), ts=C.tsize, lh=ts*1.3;
-  var subS=Math.max(3.4,ts*0.24), blockH=lines.length*lh+(C.sub?subS*2.4:0), cy=H*C.ty/100, top=cy-blockH/2;
+  var subS=Math.max(3.4,ts*0.24), blockH=lines.length*lh+(C.sub?subS*2.4:0), cy=H*C.ty/100, top=cy-blockH/2, X=W*(1-(C.tx==null?50:C.tx)/100);
   c.textAlign="center";c.textBaseline="middle";c.direction="rtl";
   var maxW=0;c.font=TW()+" "+ts+"px '"+C.font+"'";
   lines.forEach(function(l){maxW=Math.max(maxW,c.measureText(l).width)});
@@ -253,12 +254,12 @@ function drawCover(c,W,H,b){
   if(C.frame==="line"||C.frame==="double"){c.lineWidth=0.6;c.strokeRect(8,8,W-16,H-16);if(C.frame==="double"){c.lineWidth=0.3;c.strokeRect(10,10,W-20,H-20)}}
   if(C.frame==="label"&&(lines.length||C.sub)){
     var lw=Math.min(W-16,maxW+18), lhh=blockH+14;
-    c.fillStyle="#fffdf8";rr(c,W/2-lw/2,top-7,lw,lhh,3);c.fill();
-    c.lineWidth=0.4;rr(c,W/2-lw/2+1.6,top-7+1.6,lw-3.2,lhh-3.2,2);c.stroke();
+    c.fillStyle="#fffdf8";rr(c,X-lw/2,top-7,lw,lhh,3);c.fill();
+    c.lineWidth=0.4;rr(c,X-lw/2+1.6,top-7+1.6,lw-3.2,lhh-3.2,2);c.stroke();
   }
   c.fillStyle=C.tcolor;c.font=TW()+" "+ts+"px '"+C.font+"'";
-  lines.forEach(function(l,i){c.fillText(l,W/2,top+lh*(i+0.5),W-14)});
-  if(C.sub){c.font="400 "+subS+"px '"+C.font+"'";c.fillText(C.sub,W/2,top+lines.length*lh+subS*1.3,W-16)}
+  lines.forEach(function(l,i){c.fillText(l,X,top+lh*(i+0.5),W-14)});
+  if(C.sub){c.font="400 "+subS+"px '"+C.font+"'";c.fillText(C.sub,X,top+lines.length*lh+subS*1.3,W-16)}
   if(C.foot){c.font="400 "+Math.max(3.2,ts*0.2)+"px '"+C.font+"'";c.fillText(C.foot,W/2,H-13,W-20)}
 }
 var customFonts={};
@@ -341,7 +342,7 @@ function refresh(){cancelAnimationFrame(raf);raf=requestAnimationFrame(function(
 
 /* ---------- form binding ---------- */
 var B=[["size","size"],["bind","bind"],["bleed","bleed"],["name","name"],
- ["c-title","cover.title"],["c-sub","cover.sub"],["c-foot","cover.foot"],["c-font","cover.font"],["c-tcolor","cover.tcolor"],["c-tsize","cover.tsize","n"],["c-ty","cover.ty","n"],
+ ["c-title","cover.title"],["c-sub","cover.sub"],["c-foot","cover.foot"],["c-font","cover.font"],["c-tcolor","cover.tcolor"],["c-tsize","cover.tsize","n"],["c-ty","cover.ty","n"],["c-tx","cover.tx","n"],
  ["c-bg","cover.bg"],["c-pcolor","cover.pcolor"],["c-iop","cover.iop","n"],
  ["i-sp","inner.sp","n"],["i-color","inner.color"],["i-w","inner.w"],["i-head","inner.head"],["i-date","inner.date"],["i-num","inner.num"],["i-pages","inner.pages","n"],["i-duplex","inner.duplex"]];
 function getK(k){var p=k.split(".");return p.length===1?S[p[0]]:S[p[0]][p[1]]}
