@@ -134,6 +134,8 @@ canvas.paper{width:min(340px,80vw);height:auto;background:#fff;border-radius:3px
           <select id="c-font"><option>Reem Kufi</option><option>Aref Ruqaa</option><option>Amiri</option><option>Lalezar</option><option>Cairo</option><option>Tajawal</option><option>Playfair Display</option></select></div>
         <div class="f"><label for="c-tcolor">لون الكتابة</label><input type="color" id="c-tcolor"></div>
       </div>
+      <div class="f"><label for="c-fontfile">تحميل خط من جهازج (TTF / OTF / WOFF)</label><input type="file" id="c-fontfile" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" multiple>
+        <span class="note" id="font-note">الخطوط اللي تحملينها تنحفظ على هالمتصفح وتطلع بقائمة الخط.</span></div>
       <div class="f"><label for="c-tsize">حجم العنوان</label><input type="range" id="c-tsize" min="6" max="40" step="0.5"></div>
       <div class="f"><label for="c-ty">مكان العنوان (فوق ↔ تحت)</label><input type="range" id="c-ty" min="10" max="90" step="1"></div>
       <hr>
@@ -244,7 +246,7 @@ function drawCover(c,W,H,b){
   var lines=String(C.title||"").split("\n").filter(function(l){return l.trim().length}), ts=C.tsize, lh=ts*1.3;
   var subS=Math.max(3.4,ts*0.24), blockH=lines.length*lh+(C.sub?subS*2.4:0), cy=H*C.ty/100, top=cy-blockH/2;
   c.textAlign="center";c.textBaseline="middle";c.direction="rtl";
-  var maxW=0;c.font="700 "+ts+"px '"+C.font+"'";
+  var maxW=0;c.font=TW()+" "+ts+"px '"+C.font+"'";
   lines.forEach(function(l){maxW=Math.max(maxW,c.measureText(l).width)});
   if(C.sub){c.font="400 "+subS+"px '"+C.font+"'";maxW=Math.max(maxW,c.measureText(C.sub).width)}
   c.strokeStyle=C.tcolor;
@@ -254,10 +256,18 @@ function drawCover(c,W,H,b){
     c.fillStyle="#fffdf8";rr(c,W/2-lw/2,top-7,lw,lhh,3);c.fill();
     c.lineWidth=0.4;rr(c,W/2-lw/2+1.6,top-7+1.6,lw-3.2,lhh-3.2,2);c.stroke();
   }
-  c.fillStyle=C.tcolor;c.font="700 "+ts+"px '"+C.font+"'";
+  c.fillStyle=C.tcolor;c.font=TW()+" "+ts+"px '"+C.font+"'";
   lines.forEach(function(l,i){c.fillText(l,W/2,top+lh*(i+0.5),W-14)});
   if(C.sub){c.font="400 "+subS+"px '"+C.font+"'";c.fillText(C.sub,W/2,top+lines.length*lh+subS*1.3,W-16)}
   if(C.foot){c.font="400 "+Math.max(3.2,ts*0.2)+"px '"+C.font+"'";c.fillText(C.foot,W/2,H-13,W-20)}
+}
+var customFonts={};
+function TW(){return customFonts[S.cover.font]?"400":"700"}
+function addFont(name,buf){
+  var ff=new FontFace(name,buf);
+  return ff.load().then(function(f){document.fonts.add(f);customFonts[name]=true;
+    var sel=$("c-font"),has=false;for(var i=0;i<sel.options.length;i++)if(sel.options[i].value===name)has=true;
+    if(!has){var o=document.createElement("option");o.value=name;o.textContent=name+" (خطي)";sel.appendChild(o)}});
 }
 function hline(c,x1,x2,y){c.beginPath();c.moveTo(x1,y);c.lineTo(x2,y);c.stroke()}
 function vline(c,x,y1,y2){c.beginPath();c.moveTo(x,y1);c.lineTo(x,y2);c.stroke()}
@@ -337,6 +347,8 @@ var B=[["size","size"],["bind","bind"],["bleed","bleed"],["name","name"],
 function getK(k){var p=k.split(".");return p.length===1?S[p[0]]:S[p[0]][p[1]]}
 function setK(k,v){var p=k.split(".");if(p.length===1)S[p[0]]=v;else S[p[0]][p[1]]=v}
 function fill(){
+  var fs=$("c-font"),ok=false;for(var i=0;i<fs.options.length;i++)if(fs.options[i].value===S.cover.font)ok=true;
+  if(!ok)S.cover.font="Reem Kufi";
   B.forEach(function(b){var e=$(b[0]),v=getK(b[1]);if(e.type==="checkbox")e.checked=!!v;else e.value=v});
   document.querySelectorAll(".chips").forEach(function(g){var v=getK(g.dataset.key);g.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x.dataset.v===v?"true":"false")})});
 }
@@ -367,6 +379,27 @@ $("c-img").addEventListener("change",function(e){
   }).catch(function(){status("ما قدرت أفتح هالصورة. جربي صورة JPG أو PNG.",true)});
 });
 $("c-irm").addEventListener("click",function(){coverImg=null;coverBlob=null;S.cover.img=null;$("c-img").value="";refresh();status("تمت إزالة الصورة.")});
+
+/* ---------- custom fonts ---------- */
+$("c-fontfile").addEventListener("change",function(e){
+  var files=Array.prototype.slice.call(e.target.files||[]);if(!files.length)return;
+  var last=null,bad=[];
+  files.reduce(function(p,f){return p.then(function(){
+    var name=f.name.replace(/\.[^.]+$/,"").replace(/['"\\<>]/g,"").trim().slice(0,60)||"خطي";
+    return f.arrayBuffer().then(function(buf){return addFont(name,buf.slice(0)).then(function(){last=name;
+      return idbOp("readwrite",function(st){return st.put({name:name,data:buf})},"fonts").catch(function(){})})}).catch(function(){bad.push(f.name)});
+  })},Promise.resolve()).then(function(){
+    e.target.value="";
+    if(last){S.cover.font=last;fill();refresh();}
+    if(bad.length)status("ما قدرت أقرأ: "+bad.join("، ")+". تأكدي إنه ملف خط TTF أو OTF أو WOFF.",true);
+    else if(last)status("تمت إضافة الخط «"+last+"» واختياره للغلاف.");
+  });
+});
+function loadSavedFonts(){
+  return idbOp("readonly",function(st){return st.getAll()},"fonts").then(function(a){
+    return Promise.all((a||[]).map(function(r){return addFont(r.name,r.data.slice(0)).catch(function(){})}));
+  }).catch(function(){});
+}
 
 /* ---------- export ---------- */
 function toBlob(cv,type,q){return new Promise(function(r){cv.toBlob(r,type,q)})}
@@ -407,8 +440,8 @@ $("ex-inner-pdf").addEventListener("click",function(){busy(true);
 /* ---------- saved designs ---------- */
 var LKEY="notebook-studio-designs";
 function coll(){return cap.db&&cap.uid?cap.db.collection("data/users/"+cap.uid):null}
-function idb(){return new Promise(function(res,rej){var r=indexedDB.open(LKEY,1);r.onupgradeneeded=function(){r.result.createObjectStore("designs",{keyPath:"id"})};r.onsuccess=function(){res(r.result)};r.onerror=function(){rej(r.error)}})}
-function idbOp(mode,fn){return idb().then(function(d){return new Promise(function(res,rej){var tx=d.transaction("designs",mode),rq=fn(tx.objectStore("designs"));tx.oncomplete=function(){res(rq&&rq.result)};tx.onerror=function(){rej(tx.error)};tx.onabort=function(){rej(tx.error)}})})}
+function idb(){return new Promise(function(res,rej){var r=indexedDB.open(LKEY,2);r.onupgradeneeded=function(){var d=r.result;if(!d.objectStoreNames.contains("designs"))d.createObjectStore("designs",{keyPath:"id"});if(!d.objectStoreNames.contains("fonts"))d.createObjectStore("fonts",{keyPath:"name"})};r.onsuccess=function(){res(r.result)};r.onerror=function(){rej(r.error)}})}
+function idbOp(mode,fn,store){store=store||"designs";return idb().then(function(d){return new Promise(function(res,rej){var tx=d.transaction(store,mode),rq=fn(tx.objectStore(store));tx.oncomplete=function(){res(rq&&rq.result)};tx.onerror=function(){rej(tx.error)};tx.onabort=function(){rej(tx.error)}})})}
 function thumb(){var s=$("pv-cover"),t=document.createElement("canvas");t.width=120;t.height=Math.round(120*s.height/s.width);t.getContext("2d").drawImage(s,0,0,t.width,t.height);return t.toDataURL("image/jpeg",0.7)}
 function save(asNew){
   if(asNew||!docId)docId="nb-"+Date.now().toString(36);
@@ -456,7 +489,7 @@ function merge(base,st){var o=base;if(!st||typeof st!=="object")return o;
   ["cover","inner"].forEach(function(g){if(st[g]&&typeof st[g]==="object")Object.keys(o[g]).forEach(function(k){if(k in st[g])o[g][k]=st[g][k]})});
   if(!SIZES[o.size])o.size="A5";return o}
 function openDesign(id,rec){
-  S=merge(defaults(),rec.state);docId=id;coverImg=null;coverBlob=null;$("c-img").value="";fill();
+  S=merge(defaults(),rec.state);docId=id;wantFont=S.cover.font;coverImg=null;coverBlob=null;$("c-img").value="";fill();
   var p=Promise.resolve();
   if(S.cover.img&&/^[A-Za-z0-9_.~:@+-]+$/.test(String(S.cover.img))){
     p=fetch("/_blob/"+S.cover.img).then(function(r){if(!r.ok)throw 0;return r.blob()}).then(loadImgFromBlob).then(function(im){coverImg=im}).catch(function(){S.cover.img=null;status("فتحت التصميم، بس صورة الغلاف ما انحملت. ارفعيها مرة ثانية.",true)});
@@ -472,6 +505,7 @@ $("new").addEventListener("click",function(){S=defaults();S.name="دفتر جد�
 
 /* ---------- start ---------- */
 fill();refresh();fontsReady().then(refresh);
+var wantFont=null;loadSavedFonts().then(function(){if(wantFont&&customFonts[wantFont]){S.cover.font=wantFont;fill()}refresh()});
 if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener("loadingdone",refresh);
 function use(n){try{return (window.claude&&window.claude.use)?window.claude.use(n).catch(function(){return null}):Promise.resolve(null)}catch(e){return Promise.resolve(null)}}
 use("downloads").then(function(d){cap.dl=d});
