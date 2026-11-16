@@ -61,6 +61,12 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .btn.small{padding:5px 10px;font-size:13px;font-weight:500}
 .btn.danger{color:var(--danger)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
+.svm{position:fixed;inset:0;background:rgba(20,24,22,.55);display:flex;align-items:center;justify-content:center;z-index:99;padding:16px}
+.svm[hidden]{display:none}
+.svc{background:var(--surface,#fff);border-radius:18px;padding:16px;max-width:440px;width:100%;max-height:92vh;overflow:auto;display:flex;flex-direction:column;gap:9px;text-align:center}
+.svc img{max-width:100%;max-height:48vh;margin:0 auto;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.15);-webkit-touch-callout:default}
+.svc .pdf{font-size:54px;line-height:1}
+.svc .btn{padding:13px;font-size:15px}
 .chips{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .chips button{font:inherit;font-size:12.5px;padding:8px 2px;border-radius:8px;border:1px solid var(--line);background:var(--desk);color:var(--ink);cursor:pointer}
 .chips button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -100,6 +106,14 @@ canvas.paper{width:min(340px,80vw);height:auto;background:#fff;border-radius:3px
 </style>
 </head>
 <body>
+<div class="svm" id="sv" hidden><div class="svc">
+  <img id="sv-img" alt=""><div class="pdf" id="sv-pdf">📄</div>
+  <b id="sv-name"></b>
+  <p class="note" id="sv-hint" style="margin:0">آيفون: «حفظ / مشاركة» ← «حفظ الصورة» أو «حفظ في الملفات». أندرويد: «تنزيل على الجهاز».</p>
+  <button class="btn primary" id="sv-share">حفظ / مشاركة</button>
+  <button class="btn" id="sv-dl">تنزيل على الجهاز</button>
+  <button class="btn" id="sv-x">إغلاق</button>
+</div></div>
 <div class="app">
   <aside class="panel">
     <div class="brand"><h1>استوديو الدفاتر</h1><span>تصميم · حفظ · طباعة</span></div>
@@ -457,8 +471,22 @@ function loadSavedFonts(){
 /* ---------- export ---------- */
 function toBlob(cv,type,q){return new Promise(function(r){cv.toBlob(r,type,q)})}
 function fname(sfx,ext){return (S.name||"notebook").replace(/[\\/:*?"<>|]+/g," ").trim().slice(0,60)+" - "+sfx+"."+ext}
+var svFile=null,svUrl=null;
+function svType(n){return /\.pdf$/i.test(n)?"application/pdf":"image/png"}
+function canShareF(n){try{return !!(navigator.canShare&&navigator.canShare({files:[new File([new Blob(["x"])],n,{type:svType(n)})]}))}catch(e){return false}}
+function plainDl(){if(!svFile)return;var u=URL.createObjectURL(svFile.blob),a=document.createElement("a");a.href=u;a.download=svFile.name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);status("تم تحميل الملف: "+svFile.name)}
+function showSave(filename,blob){
+  svFile={name:filename,blob:blob};if(svUrl)URL.revokeObjectURL(svUrl);var isPdf=/\.pdf$/i.test(filename);
+  svUrl=isPdf?null:URL.createObjectURL(blob);var im=$("sv-img");im.style.display=isPdf?"none":"";if(svUrl)im.src=svUrl;
+  $("sv-pdf").style.display=isPdf?"":"none";$("sv-name").textContent=filename;
+  $("sv-share").style.display=canShareF(filename)?"":"none";$("sv").hidden=false;status("الملف جاهز: "+filename);
+}
+$("sv-x").addEventListener("click",function(){$("sv").hidden=true});
+$("sv-dl").addEventListener("click",plainDl);
+$("sv-share").addEventListener("click",function(){if(!svFile)return;var f=new File([svFile.blob],svFile.name,{type:svFile.blob.type||svType(svFile.name)});
+  navigator.share({files:[f]}).catch(function(e){if(e&&e.name==="AbortError")return;plainDl()})});
 function give(filename,data){
-  if(!cap.dl){try{var blob=data instanceof Blob?data:new Blob([data]),u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);status("تم تحميل الملف: "+filename)}catch(e){status("ما تم التحميل. جربي مرة ثانية.",true)}return Promise.resolve()}
+  if(!cap.dl){try{showSave(filename,data instanceof Blob?data:new Blob([data],{type:svType(filename)}))}catch(e){status("ما تم التحميل. جربي مرة ثانية.",true)}return Promise.resolve()}
   return cap.dl.save({filename:filename,data:data}).then(function(){status("تم تجهيز الملف: "+filename)}).catch(function(e){
     status(e&&e.code==="declined"?"تم إلغاء التحميل.":"ما تم التحميل ("+((e&&e.code)||"خطأ")+"). جربي مرة ثانية.",!(e&&e.code==="declined"))});
 }
