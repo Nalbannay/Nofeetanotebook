@@ -61,6 +61,8 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .btn.small{padding:5px 10px;font-size:13px;font-weight:500}
 .btn.danger{color:var(--danger)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
+.more-ex summary{cursor:pointer;font-weight:600;color:var(--muted,#667);padding:6px 0}
+.more-ex[open]{display:flex;flex-direction:column;gap:8px}
 .svm{position:fixed;inset:0;background:rgba(20,24,22,.55);display:flex;align-items:center;justify-content:center;z-index:99;padding:16px}
 .svm[hidden]{display:none}
 .svc{background:var(--surface,#fff);border-radius:18px;padding:16px;max-width:440px;width:100%;max-height:92vh;overflow:auto;display:flex;flex-direction:column;gap:9px;text-align:center}
@@ -138,9 +140,13 @@ canvas.paper{width:min(340px,80vw);height:auto;background:#fff;border-radius:3px
       <label class="chk"><input type="checkbox" id="bleed"> إضافة حواف قص للغلاف (3 ملم من كل جهة)</label>
       <hr>
       <div class="lbl">التصدير بجودة الطباعة (300 DPI)</div>
-      <button class="btn primary" id="ex-cover-png">تحميل الغلاف صورة PNG</button>
-      <button class="btn" id="ex-cover-pdf">تحميل الغلاف PDF</button>
-      <button class="btn" id="ex-inner-pdf">تحميل الصفحات الداخلية PDF</button>
+      <button class="btn primary" id="ex-all-pdf">تحميل الدفتر كامل PDF</button>
+      <p class="note" style="margin:-2px 0 4px">ملف واحد: الغلاف أول صفحة وبعده كل الصفحات الداخلية بالترتيب.</p>
+      <details class="more-ex"><summary>ملفات منفصلة</summary>
+      <button class="btn" id="ex-cover-png">الغلاف بس — صورة PNG</button>
+      <button class="btn" id="ex-cover-pdf">الغلاف بس — PDF</button>
+      <button class="btn" id="ex-inner-pdf">الصفحات الداخلية بس — PDF</button>
+      </details>
       <p class="note">الملفات تطلع بالمقاس الحقيقي للدفتر. عند الطباعة اختاري «الحجم الفعلي 100%» وأعلى جودة بالطابعة.</p>
     </section>
 
@@ -490,7 +496,7 @@ function give(filename,data){
   return cap.dl.save({filename:filename,data:data}).then(function(){status("تم تجهيز الملف: "+filename)}).catch(function(e){
     status(e&&e.code==="declined"?"تم إلغاء التحميل.":"ما تم التحميل ("+((e&&e.code)||"خطأ")+"). جربي مرة ثانية.",!(e&&e.code==="declined"))});
 }
-function busy(on){["ex-cover-png","ex-cover-pdf","ex-inner-pdf"].forEach(function(i){$(i).disabled=on})}
+function busy(on){["ex-all-pdf","ex-cover-png","ex-cover-pdf","ex-inner-pdf"].forEach(function(i){$(i).disabled=on})}
 function later(fn){return new Promise(function(res,rej){setTimeout(function(){try{res(fn())}catch(e){rej(e)}},40)})}
 function pdfDoc(W,H){var J=window.jspdf&&window.jspdf.jsPDF;if(!J)throw new Error("nopdf");return new J({unit:"mm",format:[W,H],orientation:W>H?"landscape":"portrait",compress:true})}
 $("ex-cover-png").addEventListener("click",function(){busy(true);status("جاري تجهيز الغلاف بجودة 300 DPI…");
@@ -503,19 +509,32 @@ $("ex-cover-pdf").addEventListener("click",function(){busy(true);status("جار�
     doc.addImage(cv.toDataURL("image/jpeg",0.95),"JPEG",0,0,d[0]+2*b,d[1]+2*b,"cover","SLOW");return doc.output("blob")})})
   .then(function(bl){return give(fname("الغلاف","pdf"),bl)})
   .catch(function(e){status(e&&e.message==="nopdf"?"مكتبة PDF ما انحملت. تأكدي من النت وحدّثي الصفحة.":"صار خطأ بتجهيز الملف.",true)}).then(function(){busy(false)})});
+function addInnerPages(doc,n,afterCover){
+  var d=dims(),mirror=S.inner.duplex&&(S.bind==="right"||S.bind==="left"),cache={};
+  var order=[];secs().forEach(function(x){for(var q=0;q<x.pages;q++)order.push(x.tpl)});
+  for(var p=1;p<=n;p++){
+    if(p>1||afterCover)doc.addPage([d[0],d[1]],d[0]>d[1]?"landscape":"portrait");
+    var flip=mirror&&p%2===0,key=S.inner.num?"p"+p:(order[p-1]+(flip?"B":"A"));
+    if(!cache[key])cache[key]=render(document.createElement("canvas"),"inner",PX,{flip:flip,page:S.inner.num?p:0,tpl:order[p-1]}).toDataURL(innerImg?"image/jpeg":"image/png",0.93);
+    doc.addImage(cache[key],innerImg?"JPEG":"PNG",0,0,d[0],d[1],key,"FAST");
+    if(S.inner.num)delete cache[key];
+  }
+}
+$("ex-all-pdf").addEventListener("click",function(){busy(true);
+  var n=totalPages();if(n>400){status("مجموع الصفحات "+n+" وهذا كثير على ملف واحد. خليه 400 صفحة أو أقل.",true);busy(false);return}
+  status("جاري تجهيز الدفتر كامل: الغلاف + "+n+" صفحة بجودة 300 DPI…");
+  fontsReady().then(function(){return later(function(){
+    var d=dims(),b=S.bleed?BLEED:0,cw=d[0]+2*b,ch=d[1]+2*b,doc=pdfDoc(cw,ch),cv=render(document.createElement("canvas"),"cover",PX,{bleed:S.bleed});
+    doc.addImage(cv.toDataURL("image/jpeg",0.95),"JPEG",0,0,cw,ch,"cover","SLOW");
+    addInnerPages(doc,n,true);
+    return doc.output("blob")})})
+  .then(function(bl){return give(fname("الدفتر كامل","pdf"),bl)})
+  .catch(function(e){status(e&&e.message==="nopdf"?"مكتبة PDF ما انحملت. تأكدي من النت وحدّثي الصفحة.":"صار خطأ بتجهيز الملف. جربي عدد صفحات أقل.",true)}).then(function(){busy(false)})});
 $("ex-inner-pdf").addEventListener("click",function(){busy(true);
   var n=totalPages();if(n>400){status("مجموع الصفحات "+n+" وهذا كثير على ملف واحد. خليه 400 صفحة أو أقل.",true);busy(false);return}
   status("جاري تجهيز "+n+" صفحة بجودة 300 DPI…");
   fontsReady().then(function(){return later(function(){
-    var d=dims(),doc=pdfDoc(d[0],d[1]),mirror=S.inner.duplex&&(S.bind==="right"||S.bind==="left"),cache={};
-    var order=[];secs().forEach(function(x){for(var q=0;q<x.pages;q++)order.push(x.tpl)});
-    for(var p=1;p<=n;p++){
-      if(p>1)doc.addPage([d[0],d[1]],d[0]>d[1]?"landscape":"portrait");
-      var flip=mirror&&p%2===0,key=S.inner.num?"p"+p:(order[p-1]+(flip?"B":"A"));
-      if(!cache[key])cache[key]=render(document.createElement("canvas"),"inner",PX,{flip:flip,page:S.inner.num?p:0,tpl:order[p-1]}).toDataURL(innerImg?"image/jpeg":"image/png",0.93);
-      doc.addImage(cache[key],innerImg?"JPEG":"PNG",0,0,d[0],d[1],key,"FAST");
-      if(S.inner.num)delete cache[key];
-    }
+    var d=dims(),doc=pdfDoc(d[0],d[1]);addInnerPages(doc,n,false);
     return doc.output("blob")})})
   .then(function(bl){return give(fname("الصفحات الداخلية","pdf"),bl)})
   .catch(function(e){status(e&&e.message==="nopdf"?"مكتبة PDF ما انحملت. تأكدي من النت وحدّثي الصفحة.":"صار خطأ بتجهيز الصفحات. جربي عدد صفحات أقل.",true)}).then(function(){busy(false)})});
